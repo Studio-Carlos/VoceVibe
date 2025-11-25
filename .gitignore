@@ -51,9 +51,12 @@ logs/
 models_cache/
 *.pt
 *.pth
+*.safetensors
+*.safetensors.index.json
+*.bin
+*.ckpt
 
 # Audio files (if any)
 *.wav
 *.mp3
 *.flac
-

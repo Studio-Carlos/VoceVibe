@@ -1,18 +1,21 @@
 # Core dependencies for VoiceVibe4
-# Optimized for macOS Apple Silicon (M1/M2/M3)
+# Optimized for macOS Apple Silicon (M1/M2/M3) - PyTorch CPU Backend
 
-# PyTorch with MPS support (Apple Silicon optimized)
-torch>=2.1.0
-torchaudio>=2.1.0
+# PyTorch pinned to 2.5.1 (2.6+ has weights_only bug with moshi)
+torch==2.5.1
+torchaudio==2.5.1
 
 # Audio processing
 sounddevice>=0.4.6
 numpy>=1.24.0
 
-# Moshi transcription (Kyutai)
-# Install from: pip install moshi
-# Or check: https://github.com/kyutai-labs/moshi
-moshi>=0.1.0
+# Moshi transcription (Kyutai PyTorch - CPU based STT)
+moshi>=0.2.6
+sphn>=0.1.4
+sentencepiece>=0.2.0
+
+# Model Management
+huggingface_hub>=0.20.0
 
 # LLM local (Ollama Python client)
 ollama>=0.1.0
@@ -20,14 +23,9 @@ ollama>=0.1.0
 # OSC communication
 python-osc>=1.8.0
 
-# UI
+# UI & Visualization
 customtkinter>=5.2.0
-
-# Terminal dashboard
 rich>=13.0.0
 
 # Environment variables
 python-dotenv>=1.0.0
-
-# Note: queue is a built-in Python module, no need to install
-

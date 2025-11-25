@@ -1,3 +1,60 @@
+# Development History
+
+## Overview
+This document consolidates the full chronological history of the **VoceVibe4** project migration from the MLX‑based STT backend to the official PyTorch `kyutai/stt-1b-en_fr` model.
+
+It combines the original implementation plan, the detailed walkthrough, and the task checklist, providing a single reference for future maintenance.
+
+---
+
+### Implementation Plan (original)
+
+* **Objective**: Migrate to PyTorch STT model for deterministic, hallucination‑free French transcription.
+* **Key Steps**:
+  1. Remove MLX dependencies and install PyTorch, Moshi, and related packages.
+  2. Create `download_stt.py` to fetch model files from HuggingFace.
+  3. Rewrite `src/audio_engine.py` to load the model via Moshi, handle audio encoding with Mimi, and enforce `temp=0.0`.
+  4. Verify on CPU, ensure correct sample rate (24 kHz), and maintain producer‑consumer queue.
+
+---
+
+### Walkthrough (summary)
+
+* **Dependencies**: Uninstalled `moshi_mlx`, `mlx`, `rustymimi`; installed `torch==2.5.1`, `torchaudio==2.5.1`, `moshi`, `huggingface‑hub`, `sentencepiece`, `sounddevice`.
+* **Model Download**: `download_stt.py` successfully retrieves `model.safetensors`, `config.json`, `tokenizer_spm_32k_3.model`, and related files.
+* **Audio Engine Rewrite**:
+  * Loaded model configuration, filtered incompatible keys, and instantiated via `loaders.get_moshi_lm`.
+  * Initialized Mimi with `num_codebooks=32`.
+  * Implemented streaming context (`with self.lm_gen.streaming(batch_size=1):`).
+  * Fixed gradient error by removing `torch.no_grad()` around `lm_gen.step`.
+  * **System Prompt Optimization**: Updated `BrainEngine` system prompt to enforce English output, specific SDXL-Turbo syntax (`[Style], [Subject], ...`), and strict JSON format for better visual generation.
+* **Verification**:
+  * `test_stt_final.py` confirmed model loads and processes dummy audio chunks.
+  * `main.py` runs without errors, providing French transcriptions.
+
+---
+
+### Task Checklist (final state)
+
+```
+- [x] Uninstall MLX dependencies
+- [x] Install PyTorch dependencies (torch 2.5.1, torchaudio 2.5.1, moshi, etc.)
+- [x] Update requirements.txt
+- [x] Create and run download_stt.py
+- [x] Rewrite audio_engine.py for PyTorch CPU
+- [x] Configure deterministic decoding (temp=0.0)
+- [x] Fix streaming context and Mimi codebook count
+- [x] Remove erroneous torch.no_grad() wrapper
+- [x] Verify with test script and main application
+- [x] Clean up repository (remove tests, add README, update .gitignore, set main branch)
+```
+
+---
+
+## Future Work
+* Explore GPU acceleration (if compatible hardware becomes available).
+* Add unit tests for audio processing pipeline.
+* Integrate UI improvements and dynamic visual feedback.
 # 📜 Historique d'Implémentation - Kyutai STT (Moshi/Moshika) sur macOS
 
 ## 🎯 Contexte du Projet

@@ -36,18 +36,25 @@ class Config:
     brain_analysis_interval: float = float(os.getenv("BRAIN_ANALYSIS_INTERVAL", "7.5"))  # seconds - fallback interval (target: 5-10s)
     
     # System Prompt for Visual Generation (optimized for Mistral NeMo)
-    system_prompt: str = """Tu es un VJ IA expert. Analyse le texte transcrit et génère un prompt visuel court et créatif au format JSON pour SDXL (Stable Diffusion XL).
+    system_prompt: str = """You are a real-time AI Visual Jockey (VJ). 
+Your goal is to translate the user's conversation into a short, impactful visual description for SDXL-Turbo image generation.
 
-IMPORTANT: Réponds UNIQUEMENT avec un objet JSON valide, sans texte supplémentaire.
+STRICT RULES:
+1. OUTPUT FORMAT: Single valid JSON object. No markdown, no chatting.
+2. LANGUAGE: The 'prompt' value MUST be in ENGLISH.
+3. PROMPT SYNTAX: Use the specific SDXL-Turbo order: [Art Style], [Subject], [Action], [Environment], [Lighting].
+4. LENGTH: Keep the prompt under 25 words. Focus on the main visual impact.
+5. NO NEGATIVES: Do not describe what NOT to see.
 
-Format de réponse attendu (JSON object only):
+Expected JSON Structure:
 {
-    "prompt": "description visuelle courte et évocatrice",
-    "style": "style artistique (ex: cyberpunk, abstract, neon)",
-    "mood": "ambiance émotionnelle"
+    "prompt": "cinematic photo, a lonely astronaut floating in space, dark nebula background, cold blue lighting",
+    "style": "Cinematic Sci-Fi",
+    "mood": "Melancholic"
 }
 
-Sois concis et créatif. Le prompt doit être visuellement impactant. Réponds uniquement avec le JSON, rien d'autre."""
+If the input is French, TRANSLATE the core visual concept to English.
+Be creative but direct."""
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
