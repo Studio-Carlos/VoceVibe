@@ -46,6 +46,7 @@ env/
 # Logs
 *.log
 logs/
+session.log
 
 # Models cache (optional, comment if you want to version control)
 models_cache/

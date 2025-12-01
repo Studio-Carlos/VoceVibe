@@ -17,7 +17,15 @@ import json
 import sounddevice as sd
 import logging
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+# Configure logging to file (overwrite each run) and console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("session.log", mode="w"),
+        logging.StreamHandler()
+    ]
+)
 
 # Rich for terminal dashboard
 try:
@@ -106,9 +114,6 @@ class TerminalDashboard:
                 brain_content.append("[BRAIN] ", style="bold magenta")
                 brain_content.append(f"Prompt: {self.last_prompt_data.get('prompt', 'N/A')[:100]}", style="white")
                 brain_content.append("\n", style="white")
-                brain_content.append(f"Style: {self.last_prompt_data.get('style', 'N/A')}", style="yellow")
-                brain_content.append(" | ", style="white")
-                brain_content.append(f"Mood: {self.last_prompt_data.get('mood', 'N/A')}", style="yellow")
             else:
                 brain_content.append("[BRAIN] ", style="bold magenta")
                 brain_content.append("Waiting for analysis...", style="dim white")
@@ -168,11 +173,19 @@ class VoiceVibeApp(ctk.CTk):
         
         # Start terminal dashboard update thread
         self._start_terminal_dashboard()
+        
+        # Start engine monitor (crash recovery)
+        self._start_engine_monitor()
     
     def _setup_ui(self):
         """Setup the cyberpunk-style user interface."""
         self.title("🎤 VoiceVibe4 - Visual Performance Brain")
-        self.geometry("1000x700")
+        self.title("🎤 VoiceVibe4 - Visual Performance Brain")
+        
+        # Maximize window on startup
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        self.geometry(f"{screen_width}x{screen_height}+0+0")
         
         # Configure window background
         self.configure(bg=CYBERPUNK_BG)
@@ -324,6 +337,52 @@ class VoiceVibeApp(ctk.CTk):
         )
         update_button.pack(side="left", padx=5)
         
+        # History Slider
+        history_frame = ctk.CTkFrame(config_frame, fg_color="#1a1a1a")
+        history_frame.pack(fill="x", padx=10, pady=5)
+        
+        self.history_label = ctk.CTkLabel(history_frame, text="History: 30s", width=80)
+        self.history_label.pack(side="left", padx=5)
+        
+        self.history_slider = ctk.CTkSlider(
+            history_frame, 
+            from_=5, 
+            to=60, 
+            number_of_steps=55,
+            command=self._on_history_change
+        )
+        self.history_slider.set(30) # Default
+        self.history_slider.pack(side="left", fill="x", expand=True, padx=5)
+        
+        # Prompt Rate Slider
+        rate_frame = ctk.CTkFrame(config_frame, fg_color="#1a1a1a")
+        rate_frame.pack(fill="x", padx=10, pady=5)
+        
+        self.rate_label = ctk.CTkLabel(rate_frame, text="Rate: Fastest", width=80)
+        self.rate_label.pack(side="left", padx=5)
+        
+        self.rate_slider = ctk.CTkSlider(
+            rate_frame, 
+            from_=1, 
+            to=30, 
+            number_of_steps=29,
+            command=self._on_rate_change
+        )
+        self.rate_slider.set(1) # Default to Fastest
+        self.rate_slider.pack(side="left", fill="x", expand=True, padx=5)
+        
+        # Reset Memory Button
+        reset_button = ctk.CTkButton(
+            history_frame,
+            text="RESET MEMORY",
+            command=self._on_reset_memory,
+            width=120,
+            fg_color="#ff4444",
+            hover_color="#cc0000",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        reset_button.pack(side="left", padx=5)
+        
         # Audio device selection
         audio_device_frame = ctk.CTkFrame(main_frame, fg_color="#1a1a1a", corner_radius=10)
         audio_device_frame.pack(fill="x", padx=10, pady=(0, 10))
@@ -431,9 +490,9 @@ class VoiceVibeApp(ctk.CTk):
     
     def _log(self, message: str, tag: str = "INFO"):
         """Add a message to the console with color coding."""
-        # Log to file as well
+        # Log to file (and console via StreamHandler)
         logging.info(f"[{tag}] {message}")
-        print(f"[{tag}] {message}")
+        # print(f"[{tag}] {message}")  # Removed duplicate print
         
         # Thread-safe: use after() to update UI from any thread
         self.after(0, self._update_console, message, tag)
@@ -579,7 +638,6 @@ class VoiceVibeApp(ctk.CTk):
         
         # Format prompt text
         prompt_text = f"Prompt: {prompt_data.get('prompt', 'N/A')}\n"
-        prompt_text += f"Style: {prompt_data.get('style', 'N/A')} | Mood: {prompt_data.get('mood', 'N/A')}"
         
         # Update label
         self.prompt_label.configure(text=prompt_text)
@@ -608,7 +666,7 @@ class VoiceVibeApp(ctk.CTk):
                 try:
                     if self.terminal_dashboard and self.terminal_dashboard.console:
                         # Move cursor to top and clear screen
-                        self.terminal_dashboard.console.print("\033[H\033[J", end="")
+                        # self.terminal_dashboard.console.print("\033[H\033[J", end="")
                         self.terminal_dashboard.render()
                     time.sleep(0.5)  # Update every 500ms
                 except (KeyboardInterrupt, SystemExit):
@@ -618,8 +676,136 @@ class VoiceVibeApp(ctk.CTk):
                     time.sleep(1)
         
         dashboard_thread = threading.Thread(target=dashboard_loop, daemon=True)
+        dashboard_thread = threading.Thread(target=dashboard_loop, daemon=True)
         dashboard_thread.start()
+        
+    def _start_engine_monitor(self):
+        """Start thread to monitor engines and restart if they crash."""
+        def monitor_loop():
+            import time
+            while True:
+                time.sleep(2.0)  # Check every 2 seconds
+                
+                if not self.is_running:
+                    continue
+                    
+                # Check Audio Engine
+                if self.audio_engine and not self.audio_engine.is_alive():
+                    self._log("⚠️ Audio Engine died! Restarting...", tag="ERROR")
+                    try:
+                        # Clean up old engine
+                        try:
+                            self.audio_engine.stop()
+                        except:
+                            pass
+                        
+                        # Restart
+                        text_queue = self.brain_engine.text_queue if self.brain_engine else queue.Queue()
+                        
+                        def audio_log_callback(message: str):
+                            self._log(message, tag="AUDIO")
+                        
+                        def audio_level_callback(level: float):
+                            self.after(0, self._update_audio_level, level)
+                            
+                        self.audio_engine = AudioEngine(
+                            text_queue=text_queue,
+                            transcription_callback=self.on_audio_data,
+                            audio_level_callback=audio_level_callback,
+                            log_callback=audio_log_callback
+                        )
+                        self.audio_engine.start()
+                        self._log("✅ Audio Engine restarted successfully", tag="AUDIO")
+                    except Exception as e:
+                        self._log(f"❌ Failed to restart Audio Engine: {e}", tag="ERROR")
+                
+                # Check Brain Engine
+                if self.brain_engine and not self.brain_engine.is_alive():
+                    self._log("⚠️ Brain Engine died! Restarting...", tag="ERROR")
+                    try:
+                        # Clean up
+                        try:
+                            self.brain_engine.stop()
+                        except:
+                            pass
+                            
+                        # Restart
+                        text_queue = self.audio_engine.text_queue if self.audio_engine else queue.Queue()
+                        
+                        def brain_log_callback(message: str):
+                            self._log(message, tag="BRAIN")
+                        
+                        def brain_prompt_callback(prompt_data: Dict):
+                            self.on_brain_prompt(prompt_data)
+                            
+                        self.brain_engine = BrainEngine(
+                            text_queue=text_queue,
+                            osc_client=self.osc_client,
+                            log_callback=brain_log_callback,
+                            prompt_callback=brain_prompt_callback
+                        )
+                        self.brain_engine.start()
+                        self._log("✅ Brain Engine restarted successfully", tag="BRAIN")
+                    except Exception as e:
+                        self._log(f"❌ Failed to restart Brain Engine: {e}", tag="ERROR")
+                        
+        monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
+        monitor_thread.start()
     
+    def _on_history_change(self, value):
+        """Handle history slider change."""
+        history_val = int(value)
+        self.history_label.configure(text=f"History: {history_val}s")
+        
+        # Constraint: Rate must be <= History
+        # If History is lowered below Rate, lower Rate to match
+        current_rate = self.rate_slider.get()
+        if current_rate > history_val:
+            self.rate_slider.set(history_val)
+            self._on_rate_change(history_val)
+            
+        if self.brain_engine:
+            self.brain_engine.set_context_window(history_val)
+
+    def _on_rate_change(self, value):
+        """Handle prompt rate slider change."""
+        rate_val = int(value)
+        
+        # Update label
+        if rate_val <= 2:
+            self.rate_label.configure(text="Rate: Fastest")
+        else:
+            self.rate_label.configure(text=f"Rate: {rate_val}s")
+            
+        # Constraint: Rate must be <= History
+        # If Rate is raised above History, raise History to match
+        current_history = self.history_slider.get()
+        if rate_val > current_history:
+            self.history_slider.set(rate_val)
+            self._on_history_change(rate_val)
+            
+        if self.brain_engine:
+            self.brain_engine.set_generation_interval(rate_val)
+
+    def _on_reset_memory(self):
+        """Handle reset memory button click."""
+        # Clear Brain Engine history
+        if self.brain_engine:
+            self.brain_engine.clear_memory()
+        
+        # Clear UI buffers
+        self.stt_text_buffer = []
+        self.stt_textbox.configure(state="normal")
+        self.stt_textbox.delete("1.0", "end")
+        self.stt_textbox.insert("1.0", "Memory wiped. Waiting for new audio...\n")
+        self.stt_textbox.configure(state="disabled")
+        
+        # Clear terminal dashboard if active
+        if self.terminal_dashboard:
+            self.terminal_dashboard.update_stt("")
+            
+        self._log("🧹 Memory wiped manually", tag="INFO")
+
     def _update_config(self):
         """Update OSC configuration from UI fields."""
         try:
@@ -743,6 +929,9 @@ class VoiceVibeApp(ctk.CTk):
             # Stop audio engine
             if self.audio_engine:
                 self.audio_engine.stop()
+                # Join thread to ensure it's truly dead
+                if self.audio_engine.is_alive():
+                    self.audio_engine.join(timeout=1.0)
                 self.audio_engine = None
                 self._log("Audio engine stopped", tag="AUDIO")
             

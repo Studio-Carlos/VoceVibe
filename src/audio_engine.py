@@ -64,6 +64,7 @@ class AudioEngine(threading.Thread):
         # Audio processing
         self._silence_counter = 0
         self._silence_warning_every = 50
+        self._word_accumulator = ""  # Accumulate subwords until a space is found
 
     # --------------------------------------------------------------------- #
     # Utility helpers                                                       #
@@ -134,13 +135,14 @@ class AudioEngine(threading.Thread):
             self.text_tokenizer = sentencepiece.SentencePieceProcessor(tokenizer_path)  # type: ignore
             
             # Create streaming generator with temp=0 (DETERMINISTIC)
-            self._log("🎯 Creating streaming generator (temp=0.0)...")
+            # Create streaming generator with temp=0 (DETERMINISTIC) and infinite steps
+            self._log("🎯 Creating streaming generator (temp=0.0, infinite steps)...")
             self.lm_gen = moshi_lm.LMGen(
                 lm_model=self.model,
                 temp=0.0,
                 temp_text=0.0,
-                top_k=1,      # Deterministic
-                top_k_text=1, # Deterministic
+                top_k=1,
+                top_k_text=1,
                 check=False
             )
             
@@ -171,31 +173,48 @@ class AudioEngine(threading.Thread):
 
         # Decode token to text piece
         text_piece = self.text_tokenizer.id_to_piece(token_id)  # type: ignore
+        
+        # Check if it's a start of a new word (starts with space marker U+2581)
+        is_new_word = text_piece.startswith("\u2581")
+        
         # Replace sentencepiece space marker with actual space
-        text_piece = text_piece.replace("▁", " ")
-        cleaned = text_piece.strip()
+        decoded_piece = text_piece.replace("\u2581", " ")
+        
+        if is_new_word:
+            # Flush the previous accumulated word if it exists
+            if self._word_accumulator:
+                cleaned_word = self._word_accumulator.strip()
+                if cleaned_word:
+                    self._emit_word(cleaned_word)
+            
+            # Start new accumulator with current piece
+            self._word_accumulator = decoded_piece
+        else:
+            # Append to current accumulator (it's a suffix)
+            self._word_accumulator += decoded_piece
 
-        if not cleaned:
-            return
-
+    def _emit_word(self, word: str):
+        """Emit a complete word to logs and queue."""
         # Log transcription
-        self._log(f"📝 STT: '{cleaned}'")
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self._log(f"[{timestamp}] 📝 STT: '{word}'")
 
         # Add to text queue
         try:
-            self.text_queue.put_nowait(cleaned)
+            self.text_queue.put_nowait(word)
         except queue.Full:
             # Drop oldest if queue is full
             try:
                 self.text_queue.get_nowait()
-                self.text_queue.put_nowait(cleaned)
+                self.text_queue.put_nowait(word)
             except queue.Empty:
                 pass
 
         # Call transcription callback
         if self.transcription_callback:
             try:
-                self.transcription_callback(cleaned)
+                self.transcription_callback(word)
             except Exception as exc:
                 self._log(f"Callback error: {exc}")
 
@@ -343,6 +362,7 @@ class AudioEngine(threading.Thread):
             import traceback
             traceback.print_exc()
         finally:
+            self._log("⚠️ AudioEngine run loop finished/interrupted")
             self._cleanup()
 
     def _cleanup(self):
@@ -365,7 +385,25 @@ class AudioEngine(threading.Thread):
         self._log("Stopping AudioEngine…")
         self._running = False
         self._stop_event.set()
+        
+        # Close stream immediately if possible
+        if self._stream:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+            
+        # Flush any remaining text in accumulator
+        if self._word_accumulator:
+            cleaned = self._word_accumulator.strip()
+            if cleaned:
+                self._emit_word(cleaned)
+            self._word_accumulator = ""
+
         self.join(timeout=2.0)
+        time.sleep(0.5)  # Allow audio device to release fully
 
     def is_running(self) -> bool:
         """Check if the engine is running."""

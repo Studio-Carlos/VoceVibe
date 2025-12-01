@@ -460,3 +460,33 @@ text_token = self.gen.step(data)
 **Version** : Finale (basée sur pattern officiel)  
 **Statut** : ✅ Stable et fonctionnel
 
+---
+
+### **Étape 11 : Nettoyage Final et Optimisation UI**
+
+#### Objectifs
+- Supprimer tout traitement JSON (String-in, String-out).
+- Stabiliser l'arrêt de l'application (fix OSC shutdown).
+- Ajouter des contrôles dynamiques (Rate, History).
+- Nettoyer l'interface (suppression Style/Mood).
+
+#### Réalisations
+1.  **Eradication JSON** :
+    - `BrainEngine` ne retourne plus que la string brute du prompt.
+    - `System Prompt` mis à jour pour interdire strictement le JSON.
+    - Logs nettoyés (`✅ Generated prompt: "..."`).
+
+2.  **Optimisation STT** :
+    - Ajout de `repetition_penalty=1.1` (finalement retiré car non supporté par cette version de Moshi, mais `temp=0.0` confirmé).
+    - Crash `TypeError` résolu en retirant l'argument invalide.
+
+3.  **Contrôles UI** :
+    - **Slider Prompt Rate** : Réglable de "Fastest" (détection de phrase) à 30s.
+    - **Contraintes** : `Rate <= History` forcé bidirectionnellement.
+    - **Nettoyage** : Suppression de l'affichage "Style | Mood" inutile.
+
+4.  **Robustesse** :
+    - Ajout de `is_connected()` dans `OSCClient`.
+    - Vérification de connexion avant l'envoi du dernier prompt au shutdown.
+
+**État Final** : Application stable, interface propre, code nettoyé, documentation à jour.

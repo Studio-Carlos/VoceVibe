@@ -48,6 +48,11 @@ class OSCClient:
             self._connected = False
             self._client = None
             print("[OSC] Disconnected")
+
+    def is_connected(self) -> bool:
+        """Check if connected to OSC server."""
+        return self._connected
+
     
     def send(self, address: str, *args):
         """
@@ -67,6 +72,15 @@ class OSCClient:
                 print(f"[OSC] Sent to {address}: {args}")
             except Exception as e:
                 print(f"[OSC] Send error: {e}")
+    
+    def send_simple_prompt(self, prompt_text: str):
+        """
+        Send a simple text prompt via OSC.
+        
+        Args:
+            prompt_text: The prompt text to send.
+        """
+        self.send("/visual/prompt", prompt_text)
     
     def send_json_prompt(self, prompt_data: dict):
         """

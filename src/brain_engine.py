@@ -9,7 +9,7 @@ Features:
 """
 import threading
 import time
-import json
+
 from typing import Optional, List, Tuple
 from collections import deque
 import ollama
@@ -59,7 +59,54 @@ class BrainEngine(threading.Thread):
         # Configuration
         self._accumulation_timeout = 7.5  # seconds - analyze if no new text for this long (target: 5-10s interval)
         self._context_window_seconds = 30.0  # Keep last 30 seconds of context (rolling window)
+        self._accumulation_timeout = 7.5  # seconds - analyze if no new text for this long (target: 5-10s interval)
+        self._context_window_seconds = 30.0  # Keep last 30 seconds of context (rolling window)
         self._min_char_threshold = 15  # Minimum characters before analyzing (prevents noisy triggers on short fragments)
+        
+        # Visual Memory State
+        self._last_visual_state = None  # Stores the last generated JSON (prompt, style, mood)
+        
+        # Silence Detection
+        self._last_transcription_time = time.time()
+        self._silence_timeout = 10.0  # Pause generation if no text for 10s
+        
+        # Generation Control
+        self._phrase_detection_enabled = True  # True = analyze on complete sentences
+        self._generation_interval = 2.0  # Default to fast mode
+
+    def set_generation_interval(self, seconds: float):
+        """
+        Update the generation interval.
+        If seconds <= 2.0: Enable phrase detection (Fastest mode).
+        If seconds > 2.0: Disable phrase detection (Fixed interval mode).
+        """
+        self._generation_interval = float(seconds)
+        self._accumulation_timeout = float(seconds)
+        
+        if seconds <= 2.0:
+            self._phrase_detection_enabled = True
+            self._log(f"⚡ Generation rate: FASTEST (Phrase detection ON)")
+        else:
+            self._phrase_detection_enabled = False
+            self._log(f"⏱️  Generation rate: Every {seconds:.1f}s (Phrase detection OFF)")
+
+    def set_context_window(self, seconds: float):
+        """Update the sliding window duration dynamically."""
+        self._context_window_seconds = float(seconds)
+        self._log(f"🕒 Context window updated to {self._context_window_seconds:.1f}s")
+        
+    def clear_memory(self):
+        """Clear all history buffers (memory wipe)."""
+        with self._buffer_lock:
+            self._text_buffer.clear()
+        with self._accumulation_lock:
+            self._accumulation_buffer.clear()
+            self._accumulation_start_time = None
+        with self._accumulation_lock:
+            self._accumulation_buffer.clear()
+            self._accumulation_start_time = None
+        self._last_visual_state = None
+        self._log("🧠 Memory wiped.")
     
     def _log(self, message: str):
         """Log a message via callback if available."""
@@ -120,6 +167,7 @@ class BrainEngine(threading.Thread):
                 new_texts.append(text)
                 # Add to sliding window buffer
                 self._add_to_buffer(text)
+                self._last_transcription_time = current_time  # Update activity timestamp
             except:
                 break
         
@@ -145,7 +193,7 @@ class BrainEngine(threading.Thread):
                         should_analyze = True
                 
                 # Check punctuation and length (only if not already triggered by timeout)
-                if not should_analyze:
+                if not should_analyze and self._phrase_detection_enabled:
                     # Check if last text ends with sentence-ending punctuation
                     is_complete_sentence = False
                     if self._accumulation_buffer:
@@ -237,23 +285,23 @@ class BrainEngine(threading.Thread):
             self._log(f"Analyzing text ({len(text)} chars, context: {len(context_text)} chars)...")
             
             # Prepare the user prompt with context (optimized for Mistral NeMo)
-            if context_text and context_text != text:
-                user_prompt = f"""Contexte récent (dernières 30 secondes):
-{context_text}
+            # Prepare the user prompt with context (optimized for Mistral NeMo)
+            if self._last_visual_state:
+                user_prompt = f"""PREVIOUS PROMPT: "{self._last_visual_state}"
 
-Texte actuel à analyser:
-{text}
+NEW AUDIO TRANSCRIPT:
+"{text}"
 
-Génère un prompt visuel JSON pour SDXL basé sur ce texte. Réponds UNIQUEMENT avec un objet JSON valide contenant les clés: prompt, style, mood. Pas de texte supplémentaire."""
+INSTRUCTION: Generate the NEXT prompt by modifying the PREVIOUS scene to incorporate the NEW audio concepts. Keep visual coherence."""
             else:
-                user_prompt = f"""Analyse ce texte transcrit en temps réel et génère un prompt visuel:
+                user_prompt = f"""NEW AUDIO TRANSCRIPT:
+"{text}"
 
-{text}
-
-Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. Réponds uniquement avec le JSON, rien d'autre."""
+INSTRUCTION: Generate the FIRST visual prompt based on this text."""
             
-            # Call Ollama with strict JSON format
+            # Call Ollama (raw string output)
             self._log(f"🤖 Calling LLM ({self.config.ollama_model})...")
+            self._log(f"📝 LLM Input Prompt:\n{user_prompt}")
             llm_start_time = time.time()
             
             response = ollama.chat(
@@ -268,7 +316,6 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
                         'content': user_prompt
                     }
                 ],
-                format='json',  # Force JSON output
                 options={
                     'num_ctx': 4096  # Context window size
                 }
@@ -278,51 +325,24 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
             self._log(f"⏱️  LLM response time: {llm_response_time:.2f}s")
             
             content = response.get("message", {}).get("content", "")
+            prompt_text = content.strip()
             
-            # Parse JSON (should be clean JSON due to format='json')
-            content = content.strip()
+            # Clean up quotes if present
+            if prompt_text.startswith('"') and prompt_text.endswith('"'):
+                prompt_text = prompt_text[1:-1]
             
-            # Remove markdown code blocks if present (shouldn't be with format='json', but just in case)
-            if "```json" in content:
-                start = content.find("```json") + 7
-                end = content.find("```", start)
-                content = content[start:end].strip()
-            elif "```" in content:
-                start = content.find("```") + 3
-                end = content.find("```", start)
-                content = content[start:end].strip()
+            import datetime
+            timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            self._log(f"[{timestamp}] ✅ Generated prompt: '{prompt_text}'")
             
-            # Parse JSON
-            try:
-                prompt_data = json.loads(content)
-                
-                # Validate structure
-                if not isinstance(prompt_data, dict):
-                    raise ValueError("Response is not a dictionary")
-                
-                # Ensure required keys exist
-                if "prompt" not in prompt_data:
-                    prompt_data["prompt"] = text[:100]  # Fallback
-                if "style" not in prompt_data:
-                    prompt_data["style"] = "abstract"
-                if "mood" not in prompt_data:
-                    prompt_data["mood"] = "dynamic"
-                
-                prompt_text = prompt_data.get('prompt', '')[:50]
-                self._log(f"✅ Generated prompt: '{prompt_text}...'")
-                self._log(f"   Style: {prompt_data.get('style', 'N/A')} | Mood: {prompt_data.get('mood', 'N/A')}")
-                return prompt_data
-                
-            except json.JSONDecodeError as e:
-                self._log(f"Failed to parse JSON from Ollama response: {e}")
-                self._log(f"Response content: {content[:200]}")
-                
-                # Fallback: create a simple prompt from the text
-                return {
-                    "prompt": text[:200],
-                    "style": "abstract",
-                    "mood": "dynamic"
-                }
+            # Save state for next iteration (raw string)
+            self._last_visual_state = prompt_text
+            
+            # Return as dict for compatibility with rest of app (callbacks etc)
+            # But we only really care about the 'prompt' key now
+            return {
+                "prompt": prompt_text
+            }
             
         except Exception as e:
             self._log(f"Error calling Ollama: {e}")
@@ -354,6 +374,12 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
                 # Collect recent text and check if we should analyze
                 recent_text, should_analyze = self._collect_recent_text()
                 
+                # Check for silence timeout (pause generation if no new text for > 10s)
+                if current_time - self._last_transcription_time > self._silence_timeout:
+                    # Just sleep and continue, effectively pausing generation
+                    time.sleep(0.5)
+                    continue
+                
                 # Analyze if:
                 # 1. We have text and should analyze (phrase complete or timeout)
                 # 2. OR interval has elapsed (fallback periodic analysis)
@@ -365,7 +391,7 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
                     
                     if prompt_data:
                         # Send via OSC
-                        self.osc_client.send_json_prompt(prompt_data)
+                        self.osc_client.send_simple_prompt(prompt_data.get('prompt', ''))
                         self._log(f"Sent OSC prompt: {prompt_data.get('prompt', '')[:50]}...")
                         
                         # Call prompt callback if provided
@@ -385,6 +411,7 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
             import traceback
             traceback.print_exc()
         finally:
+            self._log("⚠️ BrainEngine run loop finished/interrupted")
             self._log("Brain engine stopped")
     
     def stop(self):
@@ -399,8 +426,8 @@ Génère UNIQUEMENT un objet JSON valide avec les clés: prompt, style, mood. R�
                 remaining_text = " ".join(self._accumulation_buffer)
                 if remaining_text.strip():
                     prompt_data = self._analyze_with_ollama(remaining_text)
-                    if prompt_data:
-                        self.osc_client.send_json_prompt(prompt_data)
+                    if prompt_data and self.osc_client and self.osc_client.is_connected():
+                        self.osc_client.send_simple_prompt(prompt_data.get('prompt', ''))
                         if self.prompt_callback:
                             try:
                                 self.prompt_callback(prompt_data)
