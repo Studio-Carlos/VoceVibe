@@ -85,6 +85,4 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-
->>>>>>> 8347611 (refactor: Rename project to VoceVibe, update documentation, and refresh license year.)
 **Copyright (c) 2025 Studio Carlos**
