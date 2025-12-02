@@ -1,4 +1,4 @@
-# Core dependencies for VoiceVibe4
+# Core dependencies for VoiceVibe
 # Optimized for macOS Apple Silicon (M1/M2/M3) - PyTorch CPU Backend
 
 # PyTorch pinned to 2.5.1 (2.6+ has weights_only bug with moshi)

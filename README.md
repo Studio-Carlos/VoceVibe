@@ -1,7 +1,7 @@
 # VoceVibe4 – Real-Time Audio-to-Visual Performance Application
 
 ## Overview
-**VoceVibe4** is a real-time speech-to-text (STT) application designed for generative art performance. It acts as a "cognitive bridge" that transforms spoken audio into structured visual prompts in real-time.
+**VoceVibe** is a real-time speech-to-text (STT) application designed for generative art performance. It acts as a "cognitive bridge" that transforms spoken audio into structured visual prompts in real-time.
 
 It utilizes **Kyutai's Dedicated STT 1B model** (running on PyTorch CPU for maximum stability on macOS), processes transcripts with a local Large Language Model (**Mistral NeMo** via Ollama), and sends engineered visual prompts via **OSC** (Open Sound Control) to external rendering engines like TouchDesigner, Stable Diffusion, or Flux.
 
@@ -31,8 +31,8 @@ It utilizes **Kyutai's Dedicated STT 1B model** (running on PyTorch CPU for maxi
 
 1.  **Clone the repository**
     ```bash
-    git clone [https://github.com/Studio-Carlos/VoceVibe4.git](https://github.com/Studio-Carlos/VoceVibe4.git)
-    cd VoceVibe4
+    git clone [https://github.com/Studio-Carlos/VoceVibe.git](https://github.com/Studio-Carlos/VoceVibe.git)
+    cd VoceVibe
     ```
 
 2.  **Create a virtual environment** (Recommended)
@@ -85,4 +85,6 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+
+>>>>>>> 8347611 (refactor: Rename project to VoceVibe, update documentation, and refresh license year.)
 **Copyright (c) 2025 Studio Carlos**

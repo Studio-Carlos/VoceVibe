@@ -99,7 +99,7 @@ class TerminalDashboard:
             layout = Layout()
             
             # Header
-            header_text = Text("🎤 VoiceVibe4 - Real-Time Dashboard", style="bold cyan")
+            header_text = Text("🎤 VoiceVibe - Real-Time Dashboard", style="bold cyan")
             layout["header"] = Panel(header_text, box=box.DOUBLE, border_style="cyan")
             
             # STT Section
@@ -179,8 +179,7 @@ class VoiceVibeApp(ctk.CTk):
     
     def _setup_ui(self):
         """Setup the cyberpunk-style user interface."""
-        self.title("🎤 VoiceVibe4 - Visual Performance Brain")
-        self.title("🎤 VoiceVibe4 - Visual Performance Brain")
+        self.title("🎤 VoiceVibe - Visual Performance Brain")
         
         # Maximize window on startup
         screen_width = self.winfo_screenwidth()
@@ -197,7 +196,7 @@ class VoiceVibeApp(ctk.CTk):
         # Title with cyberpunk style
         title_label = ctk.CTkLabel(
             main_frame,
-            text="VOICEVIBE4",
+            text="VOICEVIBE",
             font=ctk.CTkFont(size=32, weight="bold"),
             text_color=CYBERPUNK_CYAN,
         )
@@ -836,7 +835,7 @@ class VoiceVibeApp(ctk.CTk):
             return
         
         self._log("=" * 50)
-        self._log("Starting VoiceVibe4 engines...")
+        self._log("Starting VoiceVibe engines...")
         
         try:
             # Update config first
@@ -917,7 +916,7 @@ class VoiceVibeApp(ctk.CTk):
             return
         
         self._log("=" * 50)
-        self._log("Stopping VoiceVibe4 engines...")
+        self._log("Stopping VoiceVibe engines...")
         
         try:
             # Stop brain engine

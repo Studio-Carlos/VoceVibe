@@ -1,9 +1,9 @@
 #!/bin/bash
-# VoiceVibe4 Startup Script
+# VoiceVibe Startup Script
 # Kills all previous instances before launching
 
 echo "=========================================="
-echo "🚀 VoiceVibe4 Startup Script"
+echo "🚀 VoiceVibe Startup Script"
 echo "=========================================="
 echo ""
 
@@ -31,7 +31,7 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Activate venv and launch
-echo "🚀 Launching VoiceVibe4..."
+echo "🚀 Launching VoiceVibe..."
 echo ""
 
 cd "$(dirname "$0")"
@@ -41,11 +41,11 @@ source .venv/bin/activate
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # Launch in background with logging (UNBUFFERED output)
-nohup python -u main.py > /tmp/voicevibe4.log 2>&1 &
+nohup python -u main.py > /tmp/voicevibe.log 2>&1 &
 APP_PID=$!
 
 # Save PID
-echo $APP_PID > /tmp/voicevibe4.pid
+echo $APP_PID > /tmp/voicevibe.pid
 
 sleep 2
 
@@ -53,10 +53,10 @@ sleep 2
 if ps -p $APP_PID > /dev/null 2>&1; then
     echo "✅ Application launched successfully!"
     echo "   PID: $APP_PID"
-    echo "   Logs: /tmp/voicevibe4.log"
+    echo "   Logs: /tmp/voicevibe.log"
     echo ""
     echo "📊 To monitor logs:"
-    echo "   tail -f /tmp/voicevibe4.log"
+    echo "   tail -f /tmp/voicevibe.log"
     echo ""
     echo "🛑 To stop:"
     echo "   kill $APP_PID"
@@ -65,7 +65,7 @@ if ps -p $APP_PID > /dev/null 2>&1; then
     echo "=========================================="
 else
     echo "❌ Failed to launch application"
-    echo "   Check logs: /tmp/voicevibe4.log"
-    tail -20 /tmp/voicevibe4.log 2>/dev/null
+    echo "   Check logs: /tmp/voicevibe.log"
+    tail -20 /tmp/voicevibe.log 2>/dev/null
     exit 1
 fi

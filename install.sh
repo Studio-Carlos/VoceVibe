@@ -1,11 +1,12 @@
 #!/bin/bash
 
-# VoiceVibe4 Installation Script for macOS
-# Optimized for Apple Silicon (M1/M2/M3)
+# VoiceVibe Installation Script for macOS
+# Sets up environment, dependencies, and desktop launcher
 
 set -e
 
-echo "🎤 VoiceVibe4 - Installation Script"
+echo "----------------------------------------------------------------"
+echo "🎤 VoiceVibe - Installation Script"
 echo "===================================="
 echo ""
 

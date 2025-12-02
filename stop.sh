@@ -1,16 +1,16 @@
 #!/bin/bash
-# VoiceVibe4 Stop Script
+# VoiceVibe Stop Script
 
-echo "🛑 Stopping VoiceVibe4..."
+echo "🛑 Stopping VoiceVibe..."
 
 # Kill by PID if exists
-if [ -f /tmp/voicevibe4.pid ]; then
-    PID=$(cat /tmp/voicevibe4.pid)
+if [ -f /tmp/voicevibe.pid ]; then
+    PID=$(cat /tmp/voicevibe.pid)
     if ps -p $PID > /dev/null 2>&1; then
         kill $PID 2>/dev/null
         echo "✅ Stopped process $PID"
     fi
-    rm -f /tmp/voicevibe4.pid
+    rm -f /tmp/voicevibe.pid
 fi
 
 # Kill all instances

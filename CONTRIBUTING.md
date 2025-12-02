@@ -61,7 +61,7 @@ If you find a bug or have a feature request:
 
 ### Documentation
 - Update README.md if adding new features
-- Update DEVELOPMENT_HISTORY.md for significant changes
+- Update CHANGELOG.md for significant changes
 - Add inline comments for complex algorithms
 
 ## Areas for Contribution

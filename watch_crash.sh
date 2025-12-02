@@ -1,10 +1,10 @@
 #!/bin/bash
 # Monitor application for crashes
 
-PID_FILE="/tmp/voicevibe4.pid"
-LOG_FILE="/tmp/voicevibe4.log"
+PID_FILE="/tmp/voicevibe.pid"
+LOG_FILE="/tmp/voicevibe.log"
 
-echo "🔍 Monitoring VoiceVibe4 for crashes..."
+echo "🔍 Monitoring VoiceVibe for crashes..."
 echo ""
 
 while true; do

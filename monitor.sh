@@ -1,8 +1,8 @@
 #!/bin/bash
-# VoiceVibe4 Monitoring Script
+# VoiceVibe Monitoring Script
+# Checks status, logs, and resources
 
-echo "=========================================="
-echo "🔍 VoiceVibe4 Status Monitor"
+echo "🔍 VoiceVibe Status Monitor"
 echo "=========================================="
 echo ""
 
@@ -21,8 +21,8 @@ echo "$INSTANCES" | awk '{print "   PID:", $2, "| CPU:", $3"%", "| MEM:", $4"%",
 echo ""
 
 # Check PID file
-if [ -f /tmp/voicevibe4.pid ]; then
-    SAVED_PID=$(cat /tmp/voicevibe4.pid)
+if [ -f /tmp/voicevibe.pid ]; then
+    SAVED_PID=$(cat /tmp/voicevibe.pid)
     if ps -p $SAVED_PID > /dev/null 2>&1; then
         echo "✅ Main instance (from PID file): $SAVED_PID"
     else
@@ -32,12 +32,12 @@ fi
 echo ""
 
 # Check logs
-if [ -f /tmp/voicevibe4.log ]; then
-    LOG_SIZE=$(wc -l < /tmp/voicevibe4.log | tr -d ' ')
-    echo "📋 Log file: /tmp/voicevibe4.log ($LOG_SIZE lines)"
+if [ -f /tmp/voicevibe.log ]; then
+    LOG_SIZE=$(wc -l < /tmp/voicevibe.log | tr -d ' ')
+    echo "📋 Log file: /tmp/voicevibe.log ($LOG_SIZE lines)"
     echo ""
     echo "📊 Recent activity (last 10 lines):"
-    tail -10 /tmp/voicevibe4.log 2>/dev/null | sed 's/^/   /'
+    tail -10 /tmp/voicevibe.log 2>/dev/null | sed 's/^/   /'
 else
     echo "⚠️  No log file found"
 fi
@@ -64,5 +64,5 @@ echo "=========================================="
 echo "💡 Commands:"
 echo "   ./start.sh  - Start application"
 echo "   ./stop.sh   - Stop all instances"
-echo "   tail -f /tmp/voicevibe4.log - Watch logs"
+echo "   tail -f /tmp/voicevibe.log - Watch logs"
 echo "=========================================="
