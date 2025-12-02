@@ -1,74 +1,88 @@
-# VoceVibe – Real-Time Audio-to-Visual Performance Application
+# VoceVibe4 – Real-Time Audio-to-Visual Performance Application
 
 ## Overview
-VoceVibe is a real-time speech-to-text (STT) application that transforms spoken audio into visual prompts. It uses Kyutai's Moshika MLX models optimized for Apple Silicon, processes transcriptions with an LLM (Ollama), and sends visual prompts via OSC to external applications like SDXL Turbo.
+**VoceVibe4** is a real-time speech-to-text (STT) application designed for generative art performance. It acts as a "cognitive bridge" that transforms spoken audio into structured visual prompts in real-time.
 
-## Key Features
-- **Real-Time STT**: Uses Kyutai Moshika MLX models optimized for Apple Silicon (M1/M2/M3)
-- **Bilingual Support**: English and French transcription
-- **Producer-Consumer Architecture**: Stable audio processing with non-blocking ML inference
-- **Automatic Gain Control (AGC)**: Normalizes varying audio input levels
-- **Noise Gating**: Filters background noise for accurate transcription
-- **Visual Brain**: LLM (Ollama) analyzes text and generates visual prompts
-- **OSC Integration**: Sends prompt strings via Open Sound Control
-- **Dynamic Controls**:
-  - **Prompt Rate**: Adjustable generation interval (Fastest to 30s)
-  - **History Window**: Adjustable context window (5s to 60s)
-  - **Visual Memory**: Maintains continuity between prompts
-- **Modern UI**: CustomTkinter interface with real-time audio level visualization
+It utilizes **Kyutai's Dedicated STT 1B model** (running on PyTorch CPU for maximum stability on macOS), processes transcripts with a local Large Language Model (**Mistral NeMo** via Ollama), and sends engineered visual prompts via **OSC** (Open Sound Control) to external rendering engines like TouchDesigner, Stable Diffusion, or Flux.
 
-## Setup
-1. **Clone the repository**
-   ```bash
-   git clone <repo‑url>
-   cd VoceVibe
-   ```
-2. **Create a virtual environment** (recommended)
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate   # on macOS/Linux
-   # .venv\Scripts\activate   # on Windows
-   ```
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. **Download the STT model files**
-   ```bash
-   python download_stt.py
-   ```
-   This script pulls `model.safetensors`, `config.json`, `tokenizer_spm_32k_3.model` and other required files from HuggingFace.
+> **⚠️ Hardware Requirement:** This project is developed and optimized for **macOS Apple Silicon (M1/M2/M3)**. While it uses the CPU for the STT model to ensure stability with specific PyTorch operators, the architecture is designed for the unified memory bandwidth of Mac chips.
 
-## Running the Application
-```bash
-python main.py
-```
-The audio engine will start, capture microphone input at 24 kHz, and output transcriptions in French.
+## 🚀 Key Features
 
-## Project Structure
-- `src/audio_engine.py` – Core STT logic.
-- `download_stt.py` – Helper to fetch model files.
-- `requirements.txt` – Pinning `torch==2.5.1` and related packages.
-- `README.md` – This file.
-- `DEVELOPMENT_HISTORY.md` – Full chronological development log.
+* **Real-Time Bilingual STT:** Powered by `kyutai/stt-1b-en_fr` (Dedicated STT model) running on PyTorch. Handles switching between French and English fluidly.
+* **Hallucination-Free Architecture:** Uses a dedicated STT model (not a conversational one) with deterministic decoding (`temp=0.0`) to prevent the AI from "inventing" dialogue.
+* **"Dual-Brain" Intelligence:**
+    * **⚡️ Fast Lane (BrainEngine):** Generates instant, artistic visual prompts (SDXL-optimized) every few seconds based on immediate context.
+    * **🐢 Slow Lane (SummaryEngine):** Accumulates the full conversation history to generate structured diagrams, mind maps, or summaries every minute.
+* **Robust Audio Pipeline:** Includes Automatic Gain Control (AGC) and strict Noise Gating to ensure only clear voice data reaches the model.
+* **OSC Integration:** Sends raw strings to `/visual/prompt` (for generative art) and `/visual/summary` (for archives/structure).
+* **Cyberpunk UI:** A dark-mode `customtkinter` interface providing real-time monitoring of audio levels, transcriptions, and generated prompts.
 
-## Notes
-- The repository's `.gitignore` excludes large artefacts (`.venv/`, `models_cache/`, `*.safetensors`, `*.pt`, `*.pth`, `*.bin`, audio files, logs, etc.).
-- The model uses MLX framework optimized for Apple Silicon (no PyTorch MPS issues).
-- Strict sampling parameters (`temp=0.1`, `top_p=0.9`) ensure deterministic transcription.
-- **Prompt Rate Constraint**: The prompt generation rate is always ≤ history window duration.
+## 📋 Prerequisites
 
-## Requirements
-- Python 3.10+ (3.12 recommended)
-- macOS with Apple Silicon (M1/M2/M3)
-- Ollama installed and running (for LLM functionality)
+* **macOS** (Apple Silicon M1/M2/M3 recommended).
+* **Python 3.10+**.
+* **Ollama** installed and running. You must pull the required LLM model before starting:
+    ```bash
+    ollama pull mistral-nemo
+    ```
 
-## Contributing
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## 🛠️ Installation
 
-## License
+1.  **Clone the repository**
+    ```bash
+    git clone [https://github.com/Studio-Carlos/VoceVibe4.git](https://github.com/Studio-Carlos/VoceVibe4.git)
+    cd VoceVibe4
+    ```
+
+2.  **Create a virtual environment** (Recommended)
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    ```
+
+3.  **Install dependencies**
+    This project requires specific versions of PyTorch to maintain compatibility with the Moshi/Kyutai loader.
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Download STT Models**
+    The application handles model downloading automatically via HuggingFace Hub upon the first launch. Ensure you have an internet connection for the first run (~2GB download).
+
+## 🎮 Usage
+
+1.  **Start the Application**
+    ```bash
+    python main.py
+    ```
+
+2.  **Configuration (In-App)**
+    * **Audio Input:** Select your microphone or virtual cable (e.g., BlackHole) from the dropdown.
+    * **OSC Target:** Set the IP and Port of your visualizer (default: `127.0.0.1:8000`).
+    * **History Window:** Adjust the slider to control how much context the "Fast Brain" takes into account.
+
+3.  **Perform**
+    * Click **START**.
+    * Speak into the microphone.
+    * Monitor the **STT** (blue), **Fast Prompts** (pink), and **Summaries** (orange) in the logs.
+
+## 🏗️ Architecture
+
+The application runs on a multi-threaded architecture to ensure the UI never freezes:
+
+* **`src/audio_engine.py`**: Handles audio capture (sounddevice) and transcription (PyTorch). Uses a Producer/Consumer pattern with a thread-safe queue.
+* **`src/brain_engine.py`** (Fast Brain): Consumes transcripts, maintains a sliding window of context, and prompts Ollama for SDXL visual descriptions.
+* **`src/summary_engine.py`** (Slow Brain): Accumulates the entire session transcript and triggers high-level summaries or diagram prompts at longer intervals.
+* **`src/osc_client.py`**: Handles network communication.
+* **`src/config.py`**: Centralized configuration and System Prompts.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to propose features or fix bugs.
+
+## 📄 License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-**Copyright (c) 2024 Studio Carlos**
-
-Permission is granted to use, modify, and distribute this software, provided that the original copyright notice and license are included in all copies or substantial portions of the software.
+**Copyright (c) 2025 Studio Carlos**
