@@ -61,3 +61,6 @@ models_cache/
 *.wav
 *.mp3
 *.flac
+
+# Documentation
+OPEN_SOURCE_CHECKLIST.md

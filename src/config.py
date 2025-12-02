@@ -1,5 +1,5 @@
 """
-Configuration management for VoiceVibe4.
+Configuration management for VoiceVibe.
 Uses python-dotenv to load environment variables.
 """
 import os

@@ -1,5 +1,5 @@
 """
-VoiceVibe4 - Main entry point with customtkinter UI.
+VoiceVibe - Main entry point with customtkinter UI.
 Real-time audio transcription and visual performance brain.
 
 Features:

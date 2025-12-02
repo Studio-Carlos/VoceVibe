@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to create a clickable Desktop launcher for VoceVibe4 on macOS.
+Script to create a clickable Desktop launcher for VoceVibe on macOS.
 """
 import os
 import stat
@@ -11,12 +11,12 @@ def create_launcher():
     project_dir = Path(os.getcwd()).resolve()
     desktop_dir = Path(os.path.expanduser("~/Desktop"))
     
-    launcher_path = desktop_dir / "VoceVibe4.command"
+    launcher_path = desktop_dir / "VoceVibe.command"
     
     # Content of the launcher script
     # We use a robust approach that activates the venv and runs main.py
     script_content = f"""#!/bin/bash
-# VoceVibe4 Launcher
+# VoceVibe Launcher
 
 # Navigate to project directory
 cd "{project_dir}"
@@ -32,7 +32,7 @@ else
 fi
 
 # Run the application
-echo "🚀 Starting VoceVibe4..."
+echo "🚀 Starting VoceVibe..."
 python main.py
 
 # Keep terminal open if it crashes
@@ -52,7 +52,7 @@ fi
         os.chmod(launcher_path, st.st_mode | stat.S_IEXEC)
         
         print(f"✅ Launcher created successfully at: {launcher_path}")
-        print("👉 You can now double-click 'VoceVibe4.command' on your Desktop to start the app.")
+        print("👉 You can now double-click 'VoceVibe.command' on your Desktop to start the app.")
         
     except Exception as e:
         print(f"❌ Failed to create launcher: {e}")
