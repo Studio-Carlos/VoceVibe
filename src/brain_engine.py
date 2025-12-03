@@ -46,9 +46,9 @@ class BrainEngine(threading.Thread):
         self._running = False
         self._stop_event = threading.Event()
         
-        # Text buffer with timestamps for sliding window (60 seconds)
+        # Text buffer with timestamps for sliding window (60 seconds -> 300 seconds)
         # Format: deque of (timestamp, text) tuples
-        self._text_buffer: deque = deque(maxlen=1000)  # Max 1000 entries (should be enough for 60s)
+        self._text_buffer: deque = deque(maxlen=5000)  # Max 5000 entries (safe for 300s)
         self._buffer_lock = threading.Lock()
         
         # Accumulation buffer for current analysis cycle
@@ -321,6 +321,10 @@ INSTRUCTION: Generate the FIRST visual prompt based on this text."""
                 }
             )
             
+            # Note: ollama.chat() doesn't support explicit timeout arg in all versions,
+            # but the underlying httpx client defaults can be overridden if needed.
+            # Assuming standard library usage here.
+            
             llm_response_time = time.time() - llm_start_time
             self._log(f"⏱️  LLM response time: {llm_response_time:.2f}s")
             
@@ -420,19 +424,19 @@ INSTRUCTION: Generate the FIRST visual prompt based on this text."""
         self._running = False
         self._stop_event.set()
         
-        # Analyze any remaining accumulated text before stopping
-        with self._accumulation_lock:
-            if self._accumulation_buffer:
-                remaining_text = " ".join(self._accumulation_buffer)
-                if remaining_text.strip():
-                    prompt_data = self._analyze_with_ollama(remaining_text)
-                    if prompt_data and self.osc_client and self.osc_client.is_connected():
-                        self.osc_client.send_simple_prompt(prompt_data.get('prompt', ''))
-                        if self.prompt_callback:
-                            try:
-                                self.prompt_callback(prompt_data)
-                            except Exception as e:
-                                pass
+        # Skip final analysis to ensure fast shutdown
+        # with self._accumulation_lock:
+        #     if self._accumulation_buffer:
+        #         remaining_text = " ".join(self._accumulation_buffer)
+        #         if remaining_text.strip():
+        #             prompt_data = self._analyze_with_ollama(remaining_text)
+        #             if prompt_data and self.osc_client and self.osc_client.is_connected():
+        #                 self.osc_client.send_simple_prompt(prompt_data.get('prompt', ''))
+        #                 if self.prompt_callback:
+        #                     try:
+        #                         self.prompt_callback(prompt_data)
+        #                     except Exception as e:
+        #                         pass
         
         # Wait for thread to finish
         self.join(timeout=2.0)

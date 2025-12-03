@@ -37,6 +37,7 @@ class AudioEngine(threading.Thread):
     def __init__(
         self,
         text_queue: Optional[queue.Queue] = None,
+        summary_queue: Optional[queue.Queue] = None,
         transcription_callback: Optional[Callable[[str], None]] = None,
         audio_level_callback: Optional[Callable[[float], None]] = None,
         log_callback: Optional[Callable[[str], None]] = None,
@@ -44,6 +45,7 @@ class AudioEngine(threading.Thread):
         super().__init__(daemon=True)
         self.config = get_config()
         self.text_queue = text_queue or queue.Queue()
+        self.summary_queue = summary_queue
         self.transcription_callback = transcription_callback
         self.audio_level_callback = audio_level_callback
         self.log_callback = log_callback
@@ -65,6 +67,7 @@ class AudioEngine(threading.Thread):
         self._silence_counter = 0
         self._silence_warning_every = 50
         self._word_accumulator = ""  # Accumulate subwords until a space is found
+        self._log_buffer = []  # Buffer for console logs
 
     # --------------------------------------------------------------------- #
     # Utility helpers                                                       #
@@ -195,10 +198,16 @@ class AudioEngine(threading.Thread):
 
     def _emit_word(self, word: str):
         """Emit a complete word to logs and queue."""
-        # Log transcription
-        import datetime
-        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        self._log(f"[{timestamp}] 📝 STT: '{word}'")
+        # Buffer logs to reduce console noise
+        self._log_buffer.append(word)
+        
+        # Flush condition: punctuation or buffer full (> 15 words)
+        if word.endswith(('.', '?', '!')) or len(self._log_buffer) > 15:
+            sentence = " ".join(self._log_buffer)
+            import datetime
+            timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            self._log(f"[{timestamp}] 📝 STT: '{sentence}'")
+            self._log_buffer = []
 
         # Add to text queue
         try:
@@ -209,6 +218,14 @@ class AudioEngine(threading.Thread):
                 self.text_queue.get_nowait()
                 self.text_queue.put_nowait(word)
             except queue.Empty:
+                pass
+
+        # Add to summary queue (fan-out)
+        if self.summary_queue:
+            try:
+                self.summary_queue.put_nowait(word)
+            except queue.Full:
+                # Summary queue full? Drop oldest or just ignore (it's slow brain anyway)
                 pass
 
         # Call transcription callback

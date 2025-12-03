@@ -73,6 +73,13 @@ class OSCClient:
             except Exception as e:
                 print(f"[OSC] Send error: {e}")
     
+    def send_message(self, address: str, value: str):
+        """
+        Send a generic string message to a specific OSC address.
+        Alias for send() to match python-osc naming convention.
+        """
+        self.send(address, value)
+
     def send_simple_prompt(self, prompt_text: str):
         """
         Send a simple text prompt via OSC.

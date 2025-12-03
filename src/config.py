@@ -80,6 +80,31 @@ Output: "Isometric 3D render, glowing smartphone floating, clean blue background
 5.  No introduction, no quotes, no JSON. Just the prompt string.
 """
 
+    # System Prompt for Text Summaries (Slow Brain)
+    summary_text_system_prompt: str = """You are a professional meeting secretary.
+Your goal is to summarize the ENTIRE conversation history provided by the user into structured bullet points.
+Focus on: Key decisions, Main topics, Arguments raised, and Conclusions.
+Output strictly in English. Keep it concise and factual."""
+
+    # System Prompt for Visual Summaries (Slow Brain)
+    summary_visual_system_prompt: str = """You are an expert Graphic Facilitator and Scientific Illustrator.
+Your goal is to synthesize the ENTIRE conversation transcript into a SINGLE, ELABORATE image prompt for a high-end AI generator (like DALL-E 3 or Flux).
+
+RULES:
+1. OUTPUT FORMAT: A single string containing a highly detailed description.
+2. STYLE TARGET: Choose between 'Hand-drawn Infographic', 'Mind Map Diagram', 'Editorial Cartoon', or 'Detailed Comic Strip'.
+3. STRUCTURE:
+   - Start with a TITLE instruction (e.g., "Title in bold fun lettering: ...").
+   - Divide the image into VISUAL SECTIONS (e.g., "Section 1: [Visual Metaphor]...", "Section 2: ...").
+   - Describe CHARACTERS or ICONS interacting with concepts.
+   - Specify the COLOR PALETTE (e.g., "neon on dark", "pastel markers on whiteboard").
+4. NO CHATTING: Output ONLY the prompt string.
+
+Example of expected density:
+"A bright, colorful infographic about [Topic]. Title: 'The Future of AI'. Section 1: A robot shaking hands with a human. Section 2: A tree growing circuit board leaves. Style: Kurzgesagt art style, flat design, vibrant colors, clean lines, high resolution."
+"""
+
+
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     
