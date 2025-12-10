@@ -4,7 +4,7 @@
 **VoceVibe** is a real-time speech-to-text (STT) application designed for generative art performance. It acts as a "cognitive bridge" that transforms spoken audio into structured visual prompts in real-time.
 
 <p align="center">
-  <img src="assets/VoceVibe_UI_V1.png" alt="VoceVibe UI" width="100%">
+  <img src="assets/VoceVibe_UI_V2.png" alt="VoceVibe UI" width="100%">
 </p>
 
 It utilizes **Kyutai's Dedicated STT 1B model** (running on PyTorch CPU for maximum stability on macOS), processes transcripts with a local Large Language Model (**Mistral NeMo** via Ollama), and sends engineered visual prompts via **OSC** (Open Sound Control) to external rendering engines like TouchDesigner, Stable Diffusion, or Flux.
