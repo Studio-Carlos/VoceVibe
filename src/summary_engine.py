@@ -115,10 +115,14 @@ class SummaryEngine(threading.Thread):
             # But since this is the "Slow Brain", blocking for 1-2s is acceptable 
             # as long as the queue doesn't overflow (it's infinite by default).
             
+            if self._stop_event.is_set(): return
+
             response = self._call_ollama(
                 system_prompt=self.config.summary_text_system_prompt,
                 user_prompt=f"TRANSCRIPT:\n{full_text}"
             )
+            
+            if self._stop_event.is_set(): return
             
             if response:
                 self._log("✅ Summary generated")
@@ -144,11 +148,15 @@ class SummaryEngine(threading.Thread):
 
         self._log("🎨 Generating visual summary prompt...")
         
+        if self._stop_event.is_set(): return
+
         try:
             response = self._call_ollama(
                 system_prompt=self.config.summary_visual_system_prompt,
                 user_prompt=f"TRANSCRIPT:\n{full_text}"
             )
+            
+            if self._stop_event.is_set(): return
             
             if response:
                 self._log("✅ Visual prompt generated")
@@ -191,6 +199,18 @@ class SummaryEngine(threading.Thread):
         """Clear the accumulated transcript."""
         self.full_transcript = []
         self._log("🧹 Memory wiped")
+
+    def get_state(self) -> dict:
+        """Get state for pausing."""
+        return {
+            "full_transcript": list(self.full_transcript)
+        }
+
+    def set_state(self, state: dict):
+        """Restore state from pause."""
+        if not state: return
+        self.full_transcript = state.get("full_transcript", [])
+        self._log("🐢 Summary history restored from pause")
 
     def stop(self):
         """Stop the engine."""

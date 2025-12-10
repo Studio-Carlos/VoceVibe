@@ -65,6 +65,7 @@ class BrainEngine(threading.Thread):
         
         # Visual Memory State
         self._last_visual_state = None  # Stores the last generated JSON (prompt, style, mood)
+        self._user_context = ""         # User-defined Global Context
         
         # Silence Detection
         self._last_transcription_time = time.time()
@@ -85,15 +86,16 @@ class BrainEngine(threading.Thread):
         
         if seconds <= 2.0:
             self._phrase_detection_enabled = True
-            self._log(f"⚡ Generation rate: FASTEST (Phrase detection ON)")
+            # self._log(f"⚡ Generation rate: FASTEST (Phrase detection ON)")
         else:
             self._phrase_detection_enabled = False
-            self._log(f"⏱️  Generation rate: Every {seconds:.1f}s (Phrase detection OFF)")
+            # self._log(f"⏱️  Generation rate: Every {seconds:.1f}s (Phrase detection OFF)")
 
     def set_context_window(self, seconds: float):
         """Update the sliding window duration dynamically."""
         self._context_window_seconds = float(seconds)
-        self._log(f"🕒 Context window updated to {self._context_window_seconds:.1f}s")
+        self._context_window_seconds = float(seconds)
+        # self._log(f"🕒 Context window updated to {self._context_window_seconds:.1f}s")
         
     def clear_memory(self):
         """Clear all history buffers (memory wipe)."""
@@ -102,11 +104,34 @@ class BrainEngine(threading.Thread):
         with self._accumulation_lock:
             self._accumulation_buffer.clear()
             self._accumulation_start_time = None
-        with self._accumulation_lock:
-            self._accumulation_buffer.clear()
-            self._accumulation_start_time = None
         self._last_visual_state = None
+        self._user_context = "" # User-defined context
         self._log("🧠 Memory wiped.")
+
+    def get_state(self) -> dict:
+        """Get current memory state for pausing."""
+        with self._buffer_lock:
+            # deque to list
+            buffer_list = list(self._text_buffer)
+            
+        return {
+            "text_buffer": buffer_list,
+            "last_visual_state": self._last_visual_state,
+            "user_context": self._user_context
+        }
+
+    def set_state(self, state: dict):
+        """Restore memory state from pause."""
+        if not state: return
+        
+        with self._buffer_lock:
+            self._text_buffer.clear()
+            for item in state.get("text_buffer", []):
+                self._text_buffer.append(item)
+                
+        self._last_visual_state = state.get("last_visual_state")
+        self._user_context = state.get("user_context", "")
+        self._log("🧠 Memory state restored from pause")
     
     def _log(self, message: str):
         """Log a message via callback if available."""
@@ -264,7 +289,13 @@ class BrainEngine(threading.Thread):
             print(f"[BrainEngine] ⚠️  Could not check Ollama model: {e}")
             return False
     
-    def _analyze_with_ollama(self, text: str) -> Optional[dict]:
+    def set_user_context(self, text: str):
+        """Update user-defined context."""
+        self._user_context = text.strip()
+        if self._user_context:
+            self._log(f"🧠 User context updated: '{self._user_context[:50]}...'")
+
+    def _analyze_with_ollama(self, new_text: str) -> Optional[dict]:
         """
         Analyze text using Ollama LLM and generate visual prompt.
         Uses strict JSON format and context window.
@@ -275,33 +306,49 @@ class BrainEngine(threading.Thread):
         Returns:
             Dictionary with prompt, style, mood, or None if error
         """
-        if not text or not text.strip():
+        if not new_text or not new_text.strip():
             return None
         
         try:
-            # Get context window (last 30 seconds)
-            context_text = self._get_context_window()
+            # Construct the prompt
+            start_time = time.time()
             
-            self._log(f"Analyzing text ({len(text)} chars, context: {len(context_text)} chars)...")
-            
-            # Prepare the user prompt with context (optimized for Mistral NeMo)
-            # Prepare the user prompt with context (optimized for Mistral NeMo)
-            if self._last_visual_state:
-                user_prompt = f"""PREVIOUS PROMPT: "{self._last_visual_state}"
+            # Base instruction
+            instruction = ""
+            if not self._last_visual_state:
+                instruction = "INSTRUCTION: Generate the FIRST visual prompt based on this text."
+            else:
+                instruction = "INSTRUCTION: Generate the NEXT prompt by modifying the PREVIOUS scene to incorporate the NEW audio concepts. Keep visual coherence."
+
+            # Inject User Context if present
+            context_injection = ""
+            if self._user_context:
+                context_injection = f"\nUSER CONTEXT / VIBE DIRECTION:\n{self._user_context}\n(Ensure the visual prompt aligns with this direction)\n"
+
+            # Construct full prompt
+            if not self._last_visual_state:
+                full_prompt = f"""
+NEW AUDIO TRANSCRIPT:
+"{new_text}"
+{context_injection}
+{instruction}
+"""
+            else:
+                full_prompt = f"""
+PREVIOUS PROMPT: "{self._last_visual_state}"
 
 NEW AUDIO TRANSCRIPT:
-"{text}"
-
-INSTRUCTION: Generate the NEXT prompt by modifying the PREVIOUS scene to incorporate the NEW audio concepts. Keep visual coherence."""
-            else:
-                user_prompt = f"""NEW AUDIO TRANSCRIPT:
-"{text}"
-
-INSTRUCTION: Generate the FIRST visual prompt based on this text."""
+"{new_text}"
+{context_injection}
+{instruction}
+"""
             
+            self._log(f"Analyzing text ({len(new_text)} chars)...")
+            
+            # Prepare the user prompt with context (optimized for Mistral NeMo)
             # Call Ollama (raw string output)
             self._log(f"🤖 Calling LLM ({self.config.ollama_model})...")
-            self._log(f"📝 LLM Input Prompt:\n{user_prompt}")
+            self._log(f"📝 LLM Input Prompt:\n{full_prompt}")
             llm_start_time = time.time()
             
             response = ollama.chat(
@@ -313,7 +360,7 @@ INSTRUCTION: Generate the FIRST visual prompt based on this text."""
                     },
                     {
                         'role': 'user',
-                        'content': user_prompt
+                        'content': full_prompt
                     }
                 ],
                 options={
@@ -327,6 +374,11 @@ INSTRUCTION: Generate the FIRST visual prompt based on this text."""
             
             llm_response_time = time.time() - llm_start_time
             self._log(f"⏱️  LLM response time: {llm_response_time:.2f}s")
+            
+            # CRITICAL: Check if we stopped while waiting for LLM
+            if self._stop_event.is_set():
+                self._log("🛑 Aborting prompt delivery (Paused)")
+                return None
             
             content = response.get("message", {}).get("content", "")
             prompt_text = content.strip()

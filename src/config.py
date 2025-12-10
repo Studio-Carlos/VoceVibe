@@ -3,6 +3,7 @@ Configuration management for VoiceVibe.
 Uses python-dotenv to load environment variables.
 """
 import os
+import json
 from dataclasses import dataclass
 from typing import Optional
 from dotenv import load_dotenv
@@ -34,6 +35,12 @@ class Config:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "mistral-nemo")
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     brain_analysis_interval: float = float(os.getenv("BRAIN_ANALYSIS_INTERVAL", "7.5"))  # seconds - fallback interval (target: 5-10s)
+    
+    # User Settings (Persisted)
+    history_seconds: int = 30
+    generation_rate: float = 2.0
+    
+    SETTINGS_FILE = "user_settings.json"
     
     # System Prompt for Visual Generation (optimized for Mistral NeMo)
     system_prompt: str = """You are an expert AI Visual Artist specializing in Real-Time Diffusion (SDXL Turbo).
@@ -116,6 +123,32 @@ Example of expected density:
     def update_audio_device(self, device_id: Optional[int]):
         """Update audio device selection."""
         self.audio_device = device_id
+        self.save_settings()
+
+    def load_settings(self):
+        """Load user settings from JSON file."""
+        if os.path.exists(self.SETTINGS_FILE):
+            try:
+                with open(self.SETTINGS_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.audio_device = data.get("audio_device", self.audio_device)
+                    self.history_seconds = data.get("history_seconds", 30)
+                    self.generation_rate = data.get("generation_rate", 2.0)
+            except Exception as e:
+                print(f"[Config] Error loading settings: {e}")
+
+    def save_settings(self):
+        """Save user settings to JSON file."""
+        try:
+            data = {
+                "audio_device": self.audio_device,
+                "history_seconds": self.history_seconds,
+                "generation_rate": self.generation_rate
+            }
+            with open(self.SETTINGS_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"[Config] Error saving settings: {e}")
 
 
 # Singleton instance

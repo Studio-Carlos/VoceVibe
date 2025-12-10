@@ -8,6 +8,7 @@ import os
 import signal
 import subprocess
 import sounddevice as sd
+import resource
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime
 
@@ -51,9 +52,18 @@ class VoiceVibeApp(ctk.CTk):
 
         # --- State ---
         self.config = get_config()
+        self.config.load_settings() # Load user preferences
+        
         self.is_running = False
         self.is_stopping = False
         self.audio_devices = []
+        
+        # Saved State for Pause/Resume
+        self.saved_brain_state = None
+        self.saved_summary_state = None
+        
+        # UI References
+        self.info_window = None
         
         # Engines
         self.audio_engine: Optional[AudioEngine] = None
@@ -79,6 +89,12 @@ class VoiceVibeApp(ctk.CTk):
         self._start_engine_monitor()
         
         self._log("Application started successfully.", "SYSTEM")
+        
+        # Clear previous session log on startup
+        try:
+             with open("session.log", "w", encoding="utf-8") as f:
+                 f.write(f"--- SESSION START {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n\n")
+        except: pass
 
     # =========================================================================
     # UI SETUP
@@ -114,10 +130,15 @@ class VoiceVibeApp(ctk.CTk):
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 5))
         self.header_frame.grid_columnconfigure(1, weight=1)
 
+        # Quit Button (Top Left)
+        ctk.CTkButton(self.header_frame, text="✖ QUIT", width=60, height=30, font=("Roboto", 12, "bold"),
+                      fg_color="#330000", text_color="#FF4444", hover_color="#550000",
+                      command=self._quit_app).grid(row=0, column=0, padx=(20, 10), pady=15, sticky="w")
+
         # Title
         title = ctk.CTkLabel(self.header_frame, text="VOCEVIBE // MISSION CONTROL", 
                              font=FONT_HEADER, text_color=COLOR_TEXT_MAIN)
-        title.grid(row=0, column=0, padx=20, pady=15, sticky="w")
+        title.grid(row=0, column=1, padx=10, pady=15, sticky="w")
 
         # Status Indicator
         self.status_indicator = ctk.CTkLabel(self.header_frame, text="● SYSTEM OFFLINE",
@@ -205,12 +226,13 @@ class VoiceVibeApp(ctk.CTk):
         self.slow_brain_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         self.slow_brain_frame.grid_columnconfigure(0, weight=1)
         self.slow_brain_frame.grid_columnconfigure(1, weight=1)
-        self.slow_brain_frame.grid_rowconfigure(0, weight=1)
+        self.slow_brain_frame.grid_rowconfigure(0, weight=3) # Summary/Visual
+        self.slow_brain_frame.grid_rowconfigure(1, weight=1) # Context Input (New)
 
         # Left: Summary
         self.summary_frame = ctk.CTkFrame(self.slow_brain_frame, fg_color=COLOR_PANEL,
                                           border_width=2, border_color=ACCENT_PURPLE)
-        self.summary_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        self.summary_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=(0, 5))
         self.summary_frame.grid_columnconfigure(0, weight=1)
         self.summary_frame.grid_rowconfigure(1, weight=1)
 
@@ -224,7 +246,7 @@ class VoiceVibeApp(ctk.CTk):
                       command=lambda: self._copy_to_clipboard(self.summary_box.get("1.0", "end"))).pack(side="right", padx=(5, 0))
         
         # Reset Button (Moved here)
-        ctk.CTkButton(sum_header, text="RESET", width=60, height=24, font=("Roboto", 10, "bold"),
+        ctk.CTkButton(sum_header, text="MEM RESET", width=80, height=24, font=("Roboto", 10, "bold"),
                       fg_color=COLOR_BORDER, text_color=COLOR_TEXT_DIM, hover_color=ACCENT_RED,
                       command=self._reset_history).pack(side="right")
 
@@ -254,6 +276,22 @@ class VoiceVibeApp(ctk.CTk):
         self.visual_box.insert("1.0", "Waiting for visual context...")
         self.visual_box.configure(state="disabled")
 
+        # --- USER CONTEXT INPUT (New Bottom Section) ---
+        self.context_frame = ctk.CTkFrame(self.slow_brain_frame, fg_color=COLOR_PANEL, border_width=1, border_color=COLOR_BORDER)
+        self.context_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+        self.context_frame.grid_columnconfigure(0, weight=1)
+        self.context_frame.grid_rowconfigure(1, weight=1)
+        
+        ctk.CTkLabel(self.context_frame, text="GLOBAL CONTEXT / VIBE (Optional)", font=("Roboto", 10, "bold"), text_color=COLOR_TEXT_DIM).grid(row=0, column=0, sticky="w", padx=10, pady=(5,0))
+        
+        self.context_input = ctk.CTkTextbox(self.context_frame, font=("Roboto", 12), height=60,
+                                            fg_color="#080808", text_color="#AAAAAA", wrap="word")
+        self.context_input.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.context_input.insert("1.0", "Type context here (e.g. 'Cyberpunk Noir style', 'Focus on nature')...")
+        self.context_input.bind("<FocusIn>", self._on_context_focus_in)
+        self.context_input.bind("<FocusOut>", self._on_context_update)
+        self.context_input.bind("<Return>", self._on_context_enter) # Update on Enter too
+
         # --- CONTROLS (Bottom) ---
         self.controls_frame = ctk.CTkFrame(self.right_panel, fg_color=COLOR_PANEL, border_width=1, border_color=COLOR_BORDER)
         self.controls_frame.grid(row=2, column=0, sticky="ew")
@@ -270,9 +308,9 @@ class VoiceVibeApp(ctk.CTk):
                                           command=self._start_engines)
         self.start_button.pack(side="left", padx=(0, 10))
         
-        self.stop_button = ctk.CTkButton(self.btn_frame, text="⏹ SHUTDOWN", 
+        self.stop_button = ctk.CTkButton(self.btn_frame, text="⏸ PAUSE", 
                                          font=FONT_UI_BOLD, fg_color=COLOR_BORDER, text_color=COLOR_TEXT_DIM,
-                                         hover_color=ACCENT_RED, width=120, height=40,
+                                         hover_color="orange", width=120, height=40,
                                          state="disabled", command=self._stop_engines)
         self.stop_button.pack(side="left")
 
@@ -287,7 +325,8 @@ class VoiceVibeApp(ctk.CTk):
         self.history_slider = ctk.CTkSlider(self.sliders_frame, from_=30, to=300, number_of_steps=270,
                                             progress_color=ACCENT_PURPLE, button_color=ACCENT_PURPLE,
                                             command=self._on_history_change)
-        self.history_slider.set(30)
+        self.history_slider.set(self.config.history_seconds)
+        self.history_label.configure(text=f"History: {self.config.history_seconds}s")
         self.history_slider.grid(row=0, column=1, sticky="ew", pady=(0, 10))
 
         # Rate Slider
@@ -296,7 +335,9 @@ class VoiceVibeApp(ctk.CTk):
         self.rate_slider = ctk.CTkSlider(self.sliders_frame, from_=2, to=60, number_of_steps=58,
                                          progress_color=ACCENT_PINK, button_color=ACCENT_PINK,
                                          command=self._on_rate_change)
-        self.rate_slider.set(2)
+        self.rate_slider.set(self.config.generation_rate)
+        rate_txt = "Fastest" if self.config.generation_rate <= 2 else f"{int(self.config.generation_rate)}s"
+        self.rate_label.configure(text=f"Rate: {rate_txt}")
         self.rate_slider.grid(row=1, column=1, sticky="ew")
 
         # OSC Config (Compact)
@@ -345,95 +386,70 @@ class VoiceVibeApp(ctk.CTk):
         self.transcript_history_box.delete("1.0", "end")
         self.transcript_history_box.configure(state="disabled")
         
+        # Clear Context Input
+        self.context_input.delete("1.0", "end")
+        self.context_input.insert("1.0", "Type context here (e.g. 'Cyberpunk Noir style', 'Focus on nature')...")
+        
         # 2. Clear Brain Memory
         if self.brain_engine:
             self.brain_engine.clear_memory()
+            self.brain_engine.clear_memory()
             self._log("Brain memory wiped", "BRAIN")
+        if self.summary_engine:
+            self.summary_engine.reset_memory()
             
-        self._log("System history reset", "SYSTEM")
+        # Clear Saved State
+        self.saved_brain_state = None
+        self.saved_summary_state = None
+            
+        self._log("System history and memory fully reset", "SYSTEM")
 
     def _show_info_popup(self):
         """Show information popup with detailed documentation."""
+        self._log("Showing help info", "SYSTEM")
+        
+        if self.info_window is not None and self.info_window.winfo_exists():
+            self.info_window.lift()
+            self.info_window.focus_force()
+            return
+
         try:
-            popup = ctk.CTkToplevel(self)
-            popup.title("Mission Briefing")
-            popup.geometry("700x600")
-            popup.configure(fg_color="#050505")
+            self.info_window = ctk.CTkToplevel(self)
+            self.info_window.title("Mission Briefing")
+            self.info_window.geometry("700x600")
+            self.info_window.configure(fg_color="#050505")
+            
+            # Ensure it stays on top
+            self.info_window.lift()
+            self.info_window.focus_force()
             
             # Header
-            header = ctk.CTkFrame(popup, fg_color="transparent")
+            header = ctk.CTkFrame(self.info_window, fg_color="transparent")
             header.pack(fill="x", padx=20, pady=20)
             
             ctk.CTkLabel(header, text="VOCEVIBE // MANUAL", font=("Roboto", 24, "bold"), text_color="white").pack(side="left")
             ctk.CTkLabel(header, text="v1.6.0", font=FONT_MONO, text_color=ACCENT_GREEN).pack(side="right", pady=5)
             
             # Scrollable Content Area
-            content = ctk.CTkTextbox(popup, font=("Roboto", 14), fg_color="#111111", text_color="#DDDDDD", wrap="word")
+            content = ctk.CTkTextbox(self.info_window, font=("Roboto", 14), fg_color="#111111", text_color="#DDDDDD", wrap="word")
             content.pack(fill="both", expand=True, padx=20, pady=(0, 20))
             
-            # Documentation Text
-            info_text = """
---------------------------------------------------------------------------------
-SYSTEM OVERVIEW
---------------------------------------------------------------------------------
-VoceVibe is a real-time AI engine that transforms speech into visual prompts and 
-summaries. It uses two parallel "brains" to analyze your conversation:
+            # Documentation Text - Load from manual.md
+            info_text = "Error loading manual."
+            try:
+                with open("manual.md", "r", encoding="utf-8") as f:
+                    info_text = f.read()
+            except Exception as e:
+                self._log(f"Manual load error: {e}", "ERROR")
+                info_text = f"Manual file not found.\n\nError: {e}"
 
-1. FAST BRAIN (SDXL)
-   • Listens to every word in real-time.
-   • Generates instant, stream-of-consciousness visual prompts.
-   • Designed for immediate reaction and vibe visualization.
-
-2. SLOW BRAIN (LLM)
-   • Analyzes the conversation flow over longer periods.
-   • Generates concise summaries and "Visual Context" descriptions.
-   • Provides the "Big Picture" understanding.
-
---------------------------------------------------------------------------------
-CONTROLS & SETTINGS
---------------------------------------------------------------------------------
-
-⏱️ HISTORY SLIDER (30s - 300s)
-   • Controls the "Memory Span" of the Brain.
-   • Short (30s): Brain only remembers the last few sentences. Good for 
-     rapidly changing topics.
-   • Long (300s): Brain remembers the last 5 minutes. Good for deep 
-     conversations and storytelling.
-
-⚡ RATE SLIDER (Fastest - 60s)
-   • Controls how often the Fast Brain generates a new prompt.
-   • Fastest: Triggers on every completed phrase/sentence. Highly reactive.
-   • 2s - 60s: Triggers at a fixed interval. More stable, less chaotic.
-
-🔴 RESET BUTTON
-   • The "Nuclear Option".
-   • Clears all transcript history.
-   • Wipes the Brain's memory context.
-   • Use this when starting a completely new topic.
-
-📡 OSC TARGET
-   • Sends data to external apps (Resolume, TouchDesigner, etc.).
-   • Default Port: 2992
-   • Addresses: 
-     /visual/prompt (String)
-     /summary/text (String)
-     /summary/image_prompt (String)
-
---------------------------------------------------------------------------------
-TIPS FOR BEST RESULTS
---------------------------------------------------------------------------------
-• Speak clearly into the microphone.
-• For wild, trippy visuals, use "Fastest" rate and short history.
-• For coherent story illustration, use ~60s history and ~10s rate.
-• If the Brain gets stuck on an old topic, hit RESET.
-"""
             content.insert("1.0", info_text)
             content.configure(state="disabled")
             
             # Close Button
-            ctk.CTkButton(popup, text="ACKNOWLEDGE", height=40, font=FONT_UI_BOLD,
+            ctk.CTkButton(self.info_window, text="ACKNOWLEDGE", height=40, font=FONT_UI_BOLD,
                           fg_color=ACCENT_GREEN, text_color="black", hover_color="#00CC33",
-                          command=popup.destroy).pack(pady=20)
+                          command=self.info_window.destroy).pack(pady=20)
                           
         except Exception as e:
             self._log(f"Error showing info popup: {e}", "ERROR")
@@ -455,6 +471,27 @@ TIPS FOR BEST RESULTS
     # =========================================================================
     # LOGIC & CALLBACKS
     # =========================================================================
+
+    def _on_context_focus_in(self, event):
+        """Clear placeholder on focus."""
+        text = self.context_input.get("1.0", "end-1c")
+        if text.startswith("Type context here"):
+            self.context_input.delete("1.0", "end")
+            self.context_input.configure(text_color=COLOR_TEXT_MAIN)
+
+    def _on_context_update(self, event=None):
+        """Update BrainEngine with new context."""
+        text = self.context_input.get("1.0", "end-1c")
+        if not text.strip() or text.startswith("Type context here"):
+            return
+            
+        if self.brain_engine:
+            self.brain_engine.set_user_context(text)
+            
+    def _on_context_enter(self, event):
+        """Update on Enter key (and keep focus or not)."""
+        self._on_context_update()
+        return "break" # Prevent newline
 
     def _start_engines(self):
         """Initialize and start all engines."""
@@ -498,6 +535,15 @@ TIPS FOR BEST RESULTS
             log_callback=lambda m: self._log(m, "BRAIN"),
             prompt_callback=lambda d: self.after(0, self._update_prompt_ui, d)
         )
+        # Apply saved settings to BrainEngine
+        self.brain_engine.set_context_window(self.config.history_seconds)
+        self.brain_engine.set_generation_interval(self.config.generation_rate)
+        
+        # Apply current text context
+        ctx = self.context_input.get("1.0", "end-1c")
+        if ctx and not ctx.startswith("Type context here"):
+            self.brain_engine.set_user_context(ctx)
+            
         self.brain_engine.start()
 
         # 6. Summary Engine
@@ -508,6 +554,13 @@ TIPS FOR BEST RESULTS
             text_callback=lambda t: self.after(0, self._update_summary_ui, t),
             visual_callback=lambda t: self.after(0, self._update_summary_visual_ui, t)
         )
+        
+        # Restore State if available
+        if self.saved_brain_state:
+            self.brain_engine.set_state(self.saved_brain_state)
+        if self.saved_summary_state:
+            self.summary_engine.set_state(self.saved_summary_state)
+            
         self.summary_engine.start()
 
         self._log("All systems nominal.", "SYSTEM")
@@ -517,29 +570,102 @@ TIPS FOR BEST RESULTS
         if not self.is_running: return
         
         self.is_stopping = True
-        self._log("Initiating shutdown sequence...", "SYSTEM")
+        self._log("Initiating pause sequence (saving context)...", "SYSTEM")
         self.start_button.configure(state="disabled")
-        self.stop_button.configure(state="disabled", text="STOPPING...")
-        self.status_indicator.configure(text="● STOPPING...", text_color="orange")
+        self.stop_button.configure(state="disabled", text="PAUSING...")
+        self.status_indicator.configure(text="● PAUSING...", text_color="orange")
         
         threading.Thread(target=self._stop_engines_thread, daemon=True).start()
 
     def _stop_engines_thread(self):
         """Background shutdown logic."""
-        if self.brain_engine: self.brain_engine.stop()
-        if self.summary_engine: self.summary_engine.stop()
-        if self.audio_engine: self.audio_engine.stop()
-        if self.osc_client: self.osc_client.disconnect()
+        # 1. Save State before stopping
+        if self.brain_engine:
+             self.saved_brain_state = self.brain_engine.get_state()
+             self.brain_engine.stop()
+             
+        if self.summary_engine:
+             self.saved_summary_state = self.summary_engine.get_state()
+             self.summary_engine.stop()
         
+        # small delay to let threads finish
+        time.sleep(0.5)
+        
+        # 2. Stop Hardware/Audio Last
+        if self.audio_engine: self.audio_engine.stop()
+        
+        # delay for audio device release
+        time.sleep(0.5)
+        
+        # 3. Disconnect Network
+        if self.osc_client: self.osc_client.disconnect()
+
+        # Trigger UI update on main thread
         self.after(0, self._on_stopped)
+
+    def _quit_app(self):
+        """Clean shutdown and exit."""
+        if self.is_stopping: return
+        self.is_stopping = True
+        
+        # Immediate UI feedback
+        self.stop_button.configure(text="QUITTING...", fg_color="#550000")
+        self.start_button.configure(state="disabled")
+        self.status_indicator.configure(text="● SHUTTING DOWN...", text_color="red")
+        self.update() # Force UI update immediately
+        
+        self._log("Initiating full system shutdown...", "SYSTEM")
+        
+        # Run cleanup in thread to keep UI alive
+        threading.Thread(target=self._quit_thread, daemon=True).start()
+
+    def _quit_thread(self):
+        """Threaded cleanup logic."""
+        # Stop Engines Synchronously (but in thread)
+        if self.brain_engine: 
+            self._log("Stopping BrainEngine...", "SYSTEM")
+            self.brain_engine.stop()
+        if self.summary_engine: 
+            self._log("Stopping SummaryEngine...", "SYSTEM")
+            self.summary_engine.stop()
+        if self.audio_engine: 
+            self._log("Stopping AudioEngine...", "SYSTEM")
+            self.audio_engine.stop()
+        if self.osc_client: 
+            self.osc_client.disconnect()
+            
+        # Clear Memory
+        import gc
+        self.brain_engine = None
+        self.summary_engine = None
+        self.audio_engine = None
+        gc.collect()
+        
+        self._log("💾 Resources released. RAM cleared.", "SYSTEM")
+        self._log("👋 Goodbye.", "SYSTEM")
+        
+        # Signal main thread to destroy and exit
+        self.after(0, self._finalize_quit)
+
+    def _finalize_quit(self):
+        """Final UI destruction."""
+        self.destroy()
+        
+        # Close Terminal (macOS specific hack)
+        try:
+            subprocess.run(["osascript", "-e", 'tell application "Terminal" to close first window'])
+        except Exception:
+            pass
+            
+        sys.exit(0)
 
     def _on_stopped(self):
         """UI cleanup after stop."""
         self.is_running = False
         self.start_button.configure(state="normal")
-        self.stop_button.configure(state="disabled", text="⏹ SHUTDOWN", fg_color=COLOR_BORDER, text_color=COLOR_TEXT_DIM)
-        self.status_indicator.configure(text="● SYSTEM OFFLINE", text_color=COLOR_TEXT_DIM)
-        self._log("System shutdown complete.", "SYSTEM")
+        self.stop_button.configure(state="disabled", text="⏸ PAUSE", fg_color=COLOR_BORDER, text_color=COLOR_TEXT_DIM)
+        self.status_indicator.configure(text="● PAUSED (Context Saved)", text_color="orange")
+        self._log("System paused. Context in memory.", "SYSTEM")
 
     # --- UI Updates ---
 
@@ -601,6 +727,8 @@ TIPS FOR BEST RESULTS
         if hasattr(self, 'history_label'):
             val = int(value)
             self.history_label.configure(text=f"History: {val}s")
+            self.config.history_seconds = val
+            self.config.save_settings()
             if self.brain_engine: self.brain_engine.set_context_window(val)
 
     def _on_rate_change(self, value):
@@ -608,6 +736,8 @@ TIPS FOR BEST RESULTS
             val = int(value)
             txt = "Rate: Fastest" if val <= 2 else f"Rate: {val}s"
             self.rate_label.configure(text=txt)
+            self.config.generation_rate = val
+            self.config.save_settings()
             if self.brain_engine: self.brain_engine.set_generation_interval(val)
 
     def _update_config(self):
@@ -632,9 +762,20 @@ TIPS FOR BEST RESULTS
         return devices
 
     def _refresh_audio_devices(self):
+        self._log("Refreshing audio devices...", "SYSTEM")
         self.audio_devices = self._load_audio_devices()
         values = ["Default"] + [label for _, label in self.audio_devices]
+        
+        # Restore saved selection
+        current_val = "Default"
+        if self.config.audio_device is not None:
+             for idx, label in self.audio_devices:
+                 if idx == self.config.audio_device:
+                     current_val = label
+                     break
+                     
         self.audio_device_combobox.configure(values=values)
+        self.audio_device_combobox.set(current_val)
 
     def _on_device_change(self, choice):
         if choice == "Default":
@@ -650,6 +791,14 @@ TIPS FOR BEST RESULTS
         # Print to original stdout for debugging/monitoring
         print(f"[{tag}] {message}", file=sys.__stdout__, flush=True)
         self.after(0, self._update_console, message, tag)
+        
+        # Write to file
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open("session.log", "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] [{tag}] {message}\n")
+        except Exception:
+            pass
 
     def _update_console(self, message: str, tag: str):
         if self.is_stopping: return
@@ -675,17 +824,55 @@ TIPS FOR BEST RESULTS
             pass
 
     def _start_engine_monitor(self):
-        """Watchdog for engine crashes."""
+        """Watchdog for engine crashes and System Monitor."""
         def monitor():
+            counter = 0
             while True:
-                time.sleep(2)
+                time.sleep(1)
+                counter += 1
+                
                 if self.is_running and not self.is_stopping:
+                    # 1. Watchdog
                     if self.audio_engine and not self.audio_engine.is_alive():
                         self._log("Audio Engine died! Restarting...", "ERROR")
-                        # Restart logic could go here
                     if self.brain_engine and not self.brain_engine.is_alive():
                         self._log("Brain Engine died! Restarting...", "ERROR")
+                        
+                    # 2. Statistics (Every 5 seconds)
+                    if counter % 5 == 0:
+                        self._update_system_stats()
+                        
         threading.Thread(target=monitor, daemon=True).start()
+
+    def _update_system_stats(self):
+        """Update system statistics (RAM, etc)."""
+        try:
+            # Memory Usage (RSS)
+            usage_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # macOS ru_maxrss is in bytes, Linux is in KB. Python doc says "kilobytes" but on Mac it's often bytes?
+            # Actually on Mac `getrusage` returns bytes. Let's assume bytes for now.
+            # Wait, standard is usually KB. Let's check typical values. 
+            # If it's > 100MB it's likely bytes.
+            
+            usage_mb = usage_bytes / (1024 * 1024) 
+            if usage_mb < 1: # Probably was KB
+                usage_mb = usage_bytes / 1024
+            
+            # Queue Depth
+            aq_size, tq_size = 0, 0
+            if self.audio_engine:
+                aq_size, tq_size = self.audio_engine.get_queue_depth()
+            
+            status_text = f"● SYSTEM ACTIVE | RAM: {usage_mb:.0f} MB | AudioQ: {aq_size}/64"
+            
+            # Update Status Indicator safely
+            self.after(0, lambda: self.status_indicator.configure(text=status_text))
+            
+            # Heartbeat Log
+            self._log(f"❤️ System Heartbeat: RAM {usage_mb:.0f} MB | AudioQ: {aq_size}", "SYSTEM")
+            
+        except Exception as e:
+            print(f"Stats error: {e}")
 
     # --- Console Redirector ---
     class ConsoleRedirector:

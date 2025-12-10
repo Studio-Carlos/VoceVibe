@@ -9,6 +9,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+import gc
 from typing import Callable, Optional
 
 import numpy as np
@@ -395,6 +396,13 @@ class AudioEngine(threading.Thread):
             finally:
                 self._stream = None
 
+        # Explicitly release large PyTorch objects to prevent double-free execution on shutdown
+        self.lm_gen = None
+        self.model = None
+        self.mimi = None
+        self.text_tokenizer = None
+        gc.collect()
+
         self._log("🛑 AudioEngine stopped")
 
     def stop(self):
@@ -407,20 +415,25 @@ class AudioEngine(threading.Thread):
         if self._stream:
             try:
                 self._stream.stop()
+            except Exception:
+                pass
+            try:
                 self._stream.close()
             except Exception:
                 pass
             self._stream = None
             
-        # Flush any remaining text in accumulator
-        if self._word_accumulator:
-            cleaned = self._word_accumulator.strip()
-            if cleaned:
-                self._emit_word(cleaned)
-            self._word_accumulator = ""
-
         self.join(timeout=2.0)
-        time.sleep(0.5)  # Allow audio device to release fully
+        
+        # Stream cleanup is handled in _cleanup, but we can double check here after join
+        if self._stream:
+             try:
+                self._stream.close()
+             except:
+                pass
+             self._stream = None
+             
+        self._log("🛑 AudioEngine stopped")
 
     def is_running(self) -> bool:
         """Check if the engine is running."""
@@ -429,3 +442,9 @@ class AudioEngine(threading.Thread):
     def get_text_queue(self) -> queue.Queue:
         """Get the text queue for external access."""
         return self.text_queue
+
+    def get_queue_depth(self) -> tuple[int, int]:
+        """Get depth of audio and text queues."""
+        a_q = self.audio_queue.qsize() if self.audio_queue else 0
+        t_q = self.text_queue.qsize() if self.text_queue else 0
+        return a_q, t_q
